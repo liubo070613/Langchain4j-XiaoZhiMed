@@ -1,7 +1,11 @@
 package org.example.langchain4j;
 
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.service.AiServices;
 import org.example.langchain4j.service.Assistant;
+import org.example.langchain4j.service.MemoryChatAssistant;
+import org.example.langchain4j.service.SeparateChatAssistant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,9 +61,55 @@ class Langchain4jApplicationTests {
     @Autowired
     private Assistant assistant;
 
-    @Test public void testAssistant() {
+    @Test
+    public void testAssistant() {
         String answer = assistant.chat("Hello");
         System.out.println(answer);
+    }
+
+    @Test
+    public void testChatMemory3() {
+
+        //创建chatMemory
+        MessageWindowChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(10);
+        //创建AIService
+        Assistant assistant = AiServices
+                .builder(Assistant.class)
+                .chatLanguageModel(openAiChatModel)
+                .chatMemory(chatMemory)
+                .build();
+        //调用service的接口
+        String answer1 = assistant.chat("我是环环");
+        System.out.println(answer1);
+        String answer2 = assistant.chat("我是谁");
+        System.out.println(answer2);
+
+    }
+
+    @Autowired
+    private MemoryChatAssistant memoryChatAssistant;
+
+    @Test
+    public void testChatMemory4() {
+        String answer1 = memoryChatAssistant.chat("我是环环");
+        System.out.println(answer1);
+        String answer2 = memoryChatAssistant.chat("我是谁");
+        System.out.println(answer2);
+    }
+
+    @Autowired
+    private SeparateChatAssistant separateChatAssistant;
+
+    @Test
+    public void testChatMemory5() {
+
+        String answer1 = separateChatAssistant.chat(1, "我是环环");
+        System.out.println(answer1);
+        String answer2 = separateChatAssistant.chat(1, "我是谁");
+        System.out.println(answer2);
+        String answer3 = separateChatAssistant.chat(2, "我是谁");
+        System.out.println(answer3);
+
     }
 
 }
