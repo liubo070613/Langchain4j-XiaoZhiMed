@@ -280,7 +280,7 @@ public interface Assistant {
 
 `AiServices`会组装`Assistant`接口以及其他组件，并使用**反射机制**创建一个实现`Assistant`接口的代理对象。 这个代理对象会**处理输入和输出**的所有转换工作。在这个例子中，`chat`方法的输入是一个字符串，但是大 模型需要一个 `UserMessage` 对象。所以，代理对象将这个字符串转换为 `UserMessage` ，并调用聊天语 言模型。`chat`方法的输出类型也是字符串，但是大模型返回的是 `AiMessage` 对象，代理对象会将其转换 为字符串。
 
-# 聊天记忆 `Chat memory`
+# 4.聊天记忆 `Chat memory`
 
 ## 使用`ChatMemory`实现聊天记忆
 
@@ -451,3 +451,291 @@ public void testChatMemory5() {
 }
 ```
 
+# 5.持久化聊天记忆 `Persistence`
+
+默认情况下，聊天记忆**存储在内存**中。如果需要持久化存储，可以将其存储在数据库中，然后数据库的选型就需要根据具体的业务场景。
+
+## 数据库的选择
+
+`MySQL`
+
+- 特点：关系型数据库。支持事务处理，确保数据的一致性和完整性，**适用于结构化数据的存储和查询**。
+
+- 适用场景：如果**聊天记忆数据结构较为规整**，例如包含固定的字段如对话 ID、用户 ID、时间 戳、消息内容等，且**需要进行复杂的查询和统计分析**，如按用户统计对话次数、按时间范围查询特定对话等，`MySQL` 是不错的选择。
+
+`Redis`
+
+- 特点：**内存数据库，读写速度极高**。它适用于存储热点数据，并且支持多种数据结构，如字符 串、哈希表、列表等，方便对不同类型的聊天记忆数据进行处理。
+
+- 适用场景：**对于实时性要求极高的聊天应用，如在线客服系统或即时通讯工具**，`Redis` 可以快 速存储和获取最新的聊天记录，以提供流畅的聊天体验。
+
+
+`MongoDB`
+
+- 特点：文档型数据库，数据以`BSON`的文档形式存储，具有高度的灵活性和可扩展性。**它不需要预先定义严格的表结构，适合存储半结构化或非结构化的数据。**
+
+- 适用场景：当聊天记忆中包含多样化的信息，如文本消息、图片、语音等多媒体数据，或者**消息格式可能会频繁变化时，`MongoDB` 能很好地适应这种灵活性**。例如，一些社交应用中用户可能会发送各种格式的消息，使用 `MongoDB` 可以方便地存储和管理这些不同类型的数据。
+
+
+
+## `MongoDB`
+
+安装
+
+使用`docker`进行安装，简单方便
+
+```ini
+docker pull mongodb
+
+docker run -d \
+  --name mongodb \
+  -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD=123456 \
+  mongo:latest
+```
+
+使用`Navicat`连接MongoDB![image-20250423143512507](./assets/image-20250423143512507.png)
+
+## 整合`Springboot`
+
+### 添加依赖
+
+```xml
+ <!-- Spring Boot Starter Data MongoDB -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-mongodb</artifactId>
+</dependency>
+```
+
+### 配置文件中添加如下配置
+
+```ini
+# 设置mongodb数据库的配置
+spring.data.mongodb.host=localhost
+spring.data.mongodb.port=27017
+spring.data.mongodb.username=admin
+spring.data.mongodb.password=123456
+spring.data.mongodb.authentication-database=admin
+```
+
+### 测试
+
+创建实体类：映射`MongoDB`中的文档（相当与MySQL的表）
+
+```java
+@Data
+@Document("chat_messages")
+public class ChatMessages {
+
+    //唯一标识，映射到 MongoDB 文档的 _id 字段
+    @Id
+    private ObjectId messageId;
+
+    private String content; //存储当前聊天记录列表的json字符串
+}
+```
+
+创建测试类
+
+```java
+@SpringBootTest
+public class MongoCrudTest {
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    @Test
+    public void testCreateChatMessage() {
+        ChatMessages chatMessage = new ChatMessages();
+        chatMessage.setMessageId(new ObjectId());
+        chatMessage.setContent("{\"message\":\"Hello, world!\"}");
+
+        ChatMessages savedMessage = mongoTemplate.save(chatMessage);
+        assertNotNull(savedMessage.getMessageId());
+        System.out.println("Created ChatMessage: " + savedMessage);
+    }
+
+    @Test
+    public void testReadChatMessage() {
+        ObjectId id = new ObjectId(); // Replace with an existing ID in your database
+        ChatMessages chatMessage = mongoTemplate.findById(id, ChatMessages.class);
+        assertNotNull(chatMessage);
+        System.out.println("Read ChatMessage: " + chatMessage);
+    }
+
+    @Test
+    public void testUpdateChatMessage() {
+        ObjectId id = new ObjectId(); // Replace with an existing ID in your database
+        ChatMessages chatMessage = mongoTemplate.findById(id, ChatMessages.class);
+        assertNotNull(chatMessage);
+
+        chatMessage.setContent("{\"message\":\"Updated content\"}");
+        ChatMessages updatedMessage = mongoTemplate.save(chatMessage);
+        assertEquals("{\"message\":\"Updated content\"}", updatedMessage.getContent());
+        System.out.println("Updated ChatMessage: " + updatedMessage);
+    }
+
+    @Test
+    public void testDeleteChatMessage() {
+        ObjectId id = new ObjectId(); // Replace with an existing ID in your database
+        ChatMessages chatMessage = mongoTemplate.findById(id, ChatMessages.class);
+        assertNotNull(chatMessage);
+
+        mongoTemplate.remove(chatMessage);
+        ChatMessages deletedMessage = mongoTemplate.findById(id, ChatMessages.class);
+        assertNull(deletedMessage);
+        System.out.println("Deleted ChatMessage with ID: " + id);
+    }
+}
+```
+
+`new ObjectId()` 会返回一个 **新的 MongoDB `ObjectId`** 实例。`ObjectId` 是 `MongoDB` 默认使用的主键类型，它是一个 **12 字节**的 `BSON` 类型，通常用作 `_id` 字段。`ObjectId` 的值是一个有效的 `24 字符`的十六进制字符串。`12*8=24*4=96`
+
+`ObjectId` 的值由以下部分组成：
+
+1. **4 字节**：当前时间戳（秒级，表示创建的时间）
+2. **5 字节**：机器标识符和进程ID（唯一）
+3. **3 字节**：计数器（递增值，用于确保在同一毫秒内创建多个 `ObjectId` 时的唯一性）
+
+`new ObjectId()`默认使用当前时间戳，当然你也可以传入一个时间戳
+
+## 持久化聊天
+
+### 优化消息实体类
+
+```java
+@Data
+@Document("chat_messages")
+public class ChatMessages {
+
+    //唯一标识，映射到 MongoDB 文档的 _id 字段
+    @Id
+    private ObjectId id;
+
+    private int messageId;
+
+    private String content; //存储当前聊天记录列表的json字符串
+}
+```
+
+### 创建持久化类
+
+创建一个类实现`ChatMemoryStore`接口,`ChatMemoryStore`定义如下
+
+```java
+public interface ChatMemoryStore {
+    List<ChatMessage> getMessages(Object var1);
+
+    void updateMessages(Object var1, List<ChatMessage> var2);
+
+    void deleteMessages(Object var1);
+}
+```
+
+`ChatMemoryStore` 接口定义了以下三个方法：
+
+1. `List<ChatMessage> getMessages(Object memoryId)`
+   - 根据 `memoryId`（通常是用户 ID 或会话 ID）检索对应的聊天消息列表。
+2. `void updateMessages(Object memoryId, List<ChatMessage> messages)`
+   - 更新指定 `memoryId` 的聊天消息列表。每当有新的消息添加到聊天内存中时，`LangChain4j` 会调用此方法
+3. `void deleteMessages(Object memoryId)`
+   - 删除指定 `memoryId` 的所有聊天消息。
+
+这些方法允许你**实现自定义的持久化逻辑**，以满足特定的存储需求。
+
+具体的实现类为：
+
+```java
+@Component
+public class MongoChatMemoryStore implements ChatMemoryStore {
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    @Override
+    public List<ChatMessage> getMessages(Object objectId) {
+        Criteria criteria = Criteria.where("id").is(objectId);
+        Query query = new Query(criteria);
+        ChatMessages chatMessages = mongoTemplate.findOne(query, ChatMessages.class);
+        if (chatMessages == null) {
+            return new LinkedList<>();
+        }
+        return ChatMessageDeserializer.messagesFromJson(chatMessages.getContent());
+    }
+
+    @Override
+    public void updateMessages(Object objectId, List<ChatMessage> messages) {
+
+        Criteria criteria = Criteria.where("id").is(objectId);
+        Query query=new Query(criteria);
+        Update update=new Update();
+        update.set("content", ChatMessageSerializer.messagesToJson(messages));
+
+        // 使用 upsert 方法，如果不存在则插入新文档
+        mongoTemplate.upsert(query, update, ChatMessages.class);
+
+    }
+
+    @Override
+    public void deleteMessages(Object objectId) {
+        
+        Criteria criteria = Criteria.where("id").is(objectId);
+        Query query=new Query(criteria);
+        mongoTemplate.remove(query, ChatMessages.class);
+
+    }
+}
+```
+
+| 类                        | 作用                                                         |
+| ------------------------- | ------------------------------------------------------------ |
+| `Criteria`                | 构建查询条件（`where`）                                      |
+| `Query`                   | 封装查询请求（条件 + 分页 + 排序等）                         |
+| `ChatMessageSerializer`   | 是 `LangChain4j` 中的一个工具类，用于将聊天消息对象序列化为 `JSON` 字符串。 |
+| `ChatMessageDeserializer` | 是 `LangChain4j` 中的一个工具类，用于将 `JSON` 字符串反序列化为聊天消息对象。 |
+
+### 更改配置类
+
+**在`SeparateChatAssistantConfig`中，添加`MongoChatMemoryStore`对象的配置**
+
+```java
+@Configuration
+public class SeparateChatAssistantConfig {
+
+    @Autowired
+    private MongoChatMemoryStore mongoChatMemoryStore;
+
+    @Bean
+    public ChatMemoryProvider chatMemoryProvider() {
+        return memoryId -> MessageWindowChatMemory.builder()
+                .id(memoryId)
+                .maxMessages(10)
+                .chatMemoryStore(mongoChatMemoryStore)//配置持久化存储
+                .build();
+    }
+
+}
+```
+
+### 测试
+
+```java
+  @Autowired
+  private SeparateChatAssistant separateChatAssistant;
+
+  @Test
+  public void testChatMemory5() {
+
+      String answer1 = separateChatAssistant.chat(1, "我是环环");
+      System.out.println(answer1);
+      String answer2 = separateChatAssistant.chat(1, "我是谁");
+      System.out.println(answer2);
+      String answer3 = separateChatAssistant.chat(2, "我是谁");
+      System.out.println(answer3);
+
+  }
+```
+
+![image-20250423163857411](./assets/image-20250423163857411.png)
