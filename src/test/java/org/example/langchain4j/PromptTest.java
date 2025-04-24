@@ -16,7 +16,7 @@ public class PromptTest {
     @Test
     public void testSystemMessage() {
 
-        String answer = separateChatAssistant.chat(3, "今天几号", LocalDateTime.now().toString());
+        String answer = separateChatAssistant.chat(7, "今天几号");
 
         System.out.println(answer);
 

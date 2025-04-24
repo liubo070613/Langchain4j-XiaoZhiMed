@@ -21,6 +21,6 @@ public class XiaozhiController {
     @Operation(summary = "对话")
     @PostMapping("/chat")
     public String chat(@RequestBody ChatFormDTO chatFormDTO) {
-        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage(), chatFormDTO.getTime());
+        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage());
     }
 }

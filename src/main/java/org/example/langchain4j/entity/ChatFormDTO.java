@@ -9,7 +9,5 @@ public class ChatFormDTO {
     private int memoryId;
     //用户消息
     private String userMessage;
-    //当前日期
-    private String time;
 
 }

@@ -908,13 +908,13 @@ public void testUserMessage() {
 创建`xiaozhi-prompt-template.txt`
 
 ```
-你的名字是“硅谷小智”，你是一家名为“北京协和医院”的智能客服。 你是一个训练有素的医疗顾问和医疗伴诊助手。 你态度友好、礼貌且言辞简洁。
+你的名字是“小智”，你是一家名为“北京协和医院”的智能客服。 你是一个训练有素的医疗顾问和医疗伴诊助手。 你态度友好、礼貌且言辞简洁。
 1、请仅在用户发起第一次会话时，和用户打个招呼，并介绍你是谁。
 2、作为一个训练有素的医疗顾问： 请基于当前临床实践和研究，针对患者提出的特定健康问题，提供详细、准确且实用的医疗建议。请同时考虑可能的病 因、诊断流程、治疗方案以及预防措施，并给出在不同情境下的应对策略。对于药物治疗，请特别指明适用的药品名 称、剂量和疗程。如果需要进一步的检查或就医，也请明确指示。
 3、作为医疗伴诊助手，你可以回答用户就医流程中的相关问题，主要包含以下功能： AI分导诊：根据患者的病情和就医需求，智能推荐最合适的科室。 AI挂号助手：实现智能查询是否有挂号号源服务；实现智能预约挂号服务；实现智能取消挂号服务。
 4、你必须遵守的规则如下： 在获取挂号预约详情或取消挂号预约之前，你必须确保自己知晓用户的姓名（必选）、身份证号（必选）、预约科室 （必选）、预约日期（必选，格式举例：2025-04-14）、预约时间（必选，格式：上午 或 下午）、预约医生（可 选）。 当被问到其他领域的咨询时，要表示歉意并说明你无法在这方面提供帮助。
 5、请在回答的结果中适当包含一些轻松可爱的图标和表情。
-6、现在是 {{current_time}}。
+6、今天是 {{current_date}}。
 ```
 
 **配置持久化和记忆隔离,**创建一个`chatMemoryProviderXiaozhi`,使用`mongoChatMemoryStore`进行消息持久化
@@ -947,7 +947,7 @@ public class XiaozhiAgentConfig {
 public interface XiaozhiAgent {
 
     @SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
-    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("current_time") String currentTime);
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage);
 }
 ```
 
@@ -960,8 +960,6 @@ public class ChatFormDTO {
     private int memoryId;
     //用户消息
     private String userMessage;
-    //当前日期
-    private String time;
 }
 ```
 
@@ -979,7 +977,7 @@ public class XiaozhiController {
     @Operation(summary = "对话")
     @PostMapping("/chat")
     public String chat(@RequestBody ChatFormDTO chatFormDTO) {
-        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage(), chatFormDTO.getTime());
+        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage());
     }
 }
 ```
@@ -1015,5 +1013,354 @@ public interface Assistant {
 
 # 8.`Function Calling` 函数调用
 
+`Function Calling` 函数调用 也叫`Tools` 工具
 
+## 入门案例
+
+大语言模型本身并不擅长数学运算。如果应用场景中偶尔会涉及到数学计算，我们可以为他提供 一个 “数学工具”。当我们提出问题时，**大语言模型会判断是否使用某个工具**。
+
+### 创建工具类
+
+通过在方法上添加 `@Tool` 注解，并在构建 AI 服务时显式指定这些工具，LLM 可以根据用户的请求决定是否调用相应的工具方法。
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.METHOD})
+public @interface Tool {
+    String name() default "";
+
+    String[] value() default {""};
+}
+```
+
+- `name`（可选）：指定工具的**名称**。如果未提供，默认使用方法名。
+- `value`（可选）：提供工具的**描述**，有助于 LLM 更好地理解工具的用途。
+
+此外，可以使用 `@P` 注解为**方法参数添加描述**，增强 LLM 对参数含义的理解。
+
+-  `value`：参数的描述信息，这是必填字段。
+- `required`：表示该参数是否为必需项，默认值为 true ，此为可选字段。
+
+`@ToolMemoryId`注解用于在**工具方法的参数上**指定用于关联对话上下文的内存标识符（`memoryID`）,提供给`AIService`方法的`memoryID`将自动传递给 `@Tool` 方法
+
+调用流程如下：
+
+1. `LLM` 接收用户输入。
+2. 判断是否需要调用工具方法。(第一次调用大模型)
+3. 如果需要，调用相应的 `@Tool` 方法，并获取返回结果。（第二次调用大模型）
+4. 将工具方法的返回结果作为对话的一部分，继续与用户交互。
+
+```java
+@Component
+public class CalculatorTools {
+
+    @Tool(name = "加法", value = "返回两个参数相加之和")
+    double sum(@ToolMemoryId int memoryId, @P(value = "加数1", required = true) double a,@P(value = "加数2", required = true) double b) {
+        System.out.println("调用加法运算 " + memoryId);
+        return a + b;
+
+    }
+
+    @Tool(name = "平方根", value = "返回给定参数的平方根")
+    double squareRoot(@ToolMemoryId int memoryId, double x) {
+
+        System.out.println("调用平方根运算 " + memoryId);
+        return Math.sqrt(x);
+
+    }
+
+}
+```
+
+### 为`Agent`配置工具类
+
+修改`SeparateChatAssistant`类
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+//        chatMemory = "chatMemory",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProvider",//找到对应的bean进行绑定
+        tools = "calculatorTools"//找到对应的bean进行绑定
+)
+public interface SeparateChatAssistant {
+//    @SystemMessage("你是一个智能助手，请用湖南话回答问题。")
+    @SystemMessage(fromResource = "prompts/assistant.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("time")String time);
+}
+```
+
+### 测试
+
+```java
+@Autowired
+private SeparateChatAssistant separateChatAssistant;
+
+@Test
+public void testCalculatorTools() {
+
+    String answer = separateChatAssistant.chat(4, "1+2等于几，475695037565的平方根是多少？",
+            LocalDateTime.now().toString());
+
+    System.out.println(answer);
+
+}
+```
+
+可以在控制台看一下调用的流程
+
+# 9.项目实战-优化硅谷小智
+
+## 预约业务的实现
+
+这部分我们实现硅谷小智的**查询订单、预约订单、取消订单**的功能
+
+### 安装`MySQL`
+
+使用docker进行安装
+
+```ini
+docker pull mysql:8.0
+
+docker run -d \
+  --name my-mysql \
+  -e MYSQL_ROOT_PASSWORD=123456 \
+  -e TZ=Asia/Shanghai \
+  -p 3306:3306 \
+  -v ~/mysql-data:/var/lib/mysql \
+  mysql:8.0 \
+  --character-set-server=utf8mb4 \
+  --collation-server=utf8mb4_general_ci
+```
+
+然后使用`Navicat`连接`MySQL`
+
+### 创建数据库表
+
+```sql
+-- 创建数据库
+CREATE DATABASE IF NOT EXISTS `xiaozhi` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+
+-- 使用数据库
+USE `xiaozhi`;
+
+-- 创建预约表
+CREATE TABLE `appointment` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `username` VARCHAR(50) NOT NULL COMMENT '预约人姓名',
+  `id_card` VARCHAR(18) NOT NULL COMMENT '身份证号',
+  `department` VARCHAR(50) NOT NULL COMMENT '预约科室',
+  `date` VARCHAR(10) NOT NULL COMMENT '预约日期（格式：yyyy-MM-dd）',
+  `time` VARCHAR(10) NOT NULL COMMENT '预约时间（格式：HH:mm）',
+  `doctor_name` VARCHAR(50) DEFAULT NULL COMMENT '医生姓名',
+  PRIMARY KEY (`id`)
+) COMMENT='预约信息表';
+```
+
+### 引入依赖
+
+```xml
+<!-- Mysql Connector -->
+<dependency>
+    <groupId>com.mysql</groupId>
+    <artifactId>mysql-connector-j</artifactId>
+</dependency>
+<!--mybatis-plus 持久层-->
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+    <version>${mybatis-plus.version}</version>
+</dependency>
+<!--代码生成器-->
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-generator</artifactId>
+    <version>3.5.9</version>
+</dependency>
+<dependency>
+    <groupId>org.freemarker</groupId>
+    <artifactId>freemarker</artifactId>
+    <version>2.3.31</version>
+</dependency>
+```
+
+### 配置文件中添加mysql配置
+
+```ini
+# mysql配置
+# MySQL 数据库连接信息
+spring.datasource.url=jdbc:mysql://localhost:3306/xiaozhi?useSSL=false&serverTimezone=Asia/Shanghai
+spring.datasource.username=root
+spring.datasource.password=123456
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+```
+
+### 使用代码生成器生成实体类、mapper、xml文件
+
+```java
+public class CodeGenerator {
+    public static void main(String[] args) {
+        // 使用 FastAutoGenerator 快速配置代码生成器
+        FastAutoGenerator.create("jdbc:mysql://localhost:3306/xiaozhi?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8",
+                        "root", "123456")
+                .globalConfig(builder -> {
+                    builder.author("liu bo") // 设置作者
+                            .outputDir("src/main/java"); // 输出目录（Java 文件）
+                })
+                .packageConfig(builder -> {
+                    builder.parent("org.example.langchain4j") // 设置父包名
+                            .entity("entity") // 设置实体类包名
+                            .mapper("mapper") // 设置 Mapper 接口包名
+                            .xml("mapper") // 设置 Mapper XML 文件包名
+                            .pathInfo(Collections.singletonMap(OutputFile.xml, "src/main/resources/mapper"))
+                            .build();// 设置 Mapper XML 文件的输出路径
+                })
+                .strategyConfig(builder -> {
+                    builder.addInclude("appointment") // 设置需要生成的表名
+                            .entityBuilder()
+                            .enableLombok() // 启用 Lombok
+                            .enableTableFieldAnnotation() // 启用字段注解
+                            .controllerBuilder().disable() // 禁用 Controller 生成
+                            .serviceBuilder().disable() // 禁用 Service 生成
+                            .disableServiceImpl(); // 禁用 ServiceImpl 生成
+                })
+                .templateEngine(new FreemarkerTemplateEngine()) // 使用 Freemarker 模板引擎
+                .execute(); // 执行生成
+    }
+
+}
+```
+
+### 创建服务类
+
+```java
+public interface AppointmentService extends IService<Appointment> {
+
+    public Appointment getOne(Appointment appointment);
+}
+
+@Service
+public class AppointmentServiceImpl extends ServiceImpl<AppointmentMapper, Appointment> implements AppointmentService {
+
+    /**
+     * 查询订单是否存在
+     */
+    @Override
+    public Appointment getOne(Appointment appointment) {
+
+        LambdaQueryWrapper<Appointment> queryWrapper = new LambdaQueryWrapper<>();
+
+        queryWrapper.eq(Appointment::getUsername, appointment.getUsername());
+        queryWrapper.eq(Appointment::getIdCard, appointment.getIdCard());
+        queryWrapper.eq(Appointment::getDepartment, appointment.getDepartment());
+        queryWrapper.eq(Appointment::getDate, appointment.getDate());
+        queryWrapper.eq(Appointment::getTime, appointment.getTime());
+
+        return baseMapper.selectOne(queryWrapper);
+
+    }
+
+}
+```
+
+### 创建`Tools`
+
+```java
+@Component
+public class AppointmentTools {
+
+    @Autowired
+    private AppointmentService appointmentService;
+
+    @Tool(name = "预约挂号", value = "根据参数，先执行工具方法queryDepartment查询是否可预约，" +
+            "并直接给用户回答是否可预约，并让用户确认所有预约信息，用户确认后再进行预约。")
+    public String bookAppointment(Appointment appointment) {
+        //查找数据库中是否包含对应的预约记录
+        Appointment appointmentDB = appointmentService.getOne(appointment);
+        if (appointmentDB == null) {
+            appointment.setId(null);//防止大模型幻觉设置了id
+            if (appointmentService.save(appointment)) {
+                return "预约成功，并返回预约详情";
+            } else {
+                return "预约失败";
+            }
+        }
+        return "您在相同的科室和时间已有预约";
+    }
+
+    @Tool(
+            name = "取消预约挂号",
+            value = "根据参数，查询预约是否存在；如果存在则删除预约记录并返回“取消预约成功”，否则返回“取消预约失败”"
+    )
+    public String cancelAppointment(Appointment appointment) {
+        if (appointment == null) {
+            return "参数无效，无法取消预约";
+        }
+        Appointment appointmentDB = appointmentService.getOne(appointment);
+
+        if (appointmentDB != null) {
+            boolean removed = appointmentService.removeById(appointmentDB.getId());
+            return removed ? "取消预约成功" : "取消预约失败";
+        }
+        return "您没有预约记录，请核对预约科室、时间等信息";
+    }
+
+    @Tool(
+            name = "查询是否有号源",
+            value = "根据科室名称、日期、时间段和医生名称（可选）查询是否有可预约号源，并返回结果"
+    )
+    public boolean queryDepartment(
+            @P(value = "科室名称") String name,
+            @P(value = "日期") String date,
+            @P(value = "时间，可选值：上午、下午") String time,
+            @P(value = "医生名称", required = false) String doctorName
+    ) {
+        System.out.println("查询是否有号源");
+        System.out.printf("科室名称：%s，日期：%s，时间：%s，医生名称：%s%n", name, date, time, doctorName);
+
+        // TODO: 查询医生排班信息，以下是伪代码逻辑说明
+
+        if (doctorName == null || doctorName.isEmpty()) {
+            // 未指定医生，查询该科室、日期、时间是否有可预约医生
+            // return true if any doctor is available
+            // 示例：return schedulingService.hasAvailableDoctor(name, date, time);
+            return true; // 示例返回
+        } else {
+            // 指定了医生
+            // 检查医生是否有排班
+            boolean hasSchedule = true; // 示例：schedulingService.hasSchedule(doctorName, date, time);
+            if (!hasSchedule) {
+                return false;
+            }
+
+            // 检查排班是否已约满
+            boolean isFull = false; // 示例：schedulingService.isFullyBooked(doctorName, date, time);
+            return !isFull;
+        }
+    }
+}
+```
+
+### 测试
+
+```
+{
+  "memoryId": 11,
+  "userMessage": "我要挂今天下午妇产科的号，我叫刘波，身份证号是：000000000000000000"
+}
+
+太好了！您的挂号已经成功啦 😊。以下是您的预约详情：
+
+- **科室**：妇产科
+- **日期**：2025-04-24
+- **时间**：下午
+- **医生**：系统将为您分配一位合适的医生
+
+请您按时前往医院就诊，祝您身体健康！如果有任何问题，请随时联系我们哦 😊。
+```
+
+![image-20250424164001253](./assets/image-20250424164001253.png)
+
+# 10.检索增强生成 RAG
 
