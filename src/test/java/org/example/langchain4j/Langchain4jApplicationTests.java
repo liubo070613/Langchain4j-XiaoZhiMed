@@ -1,14 +1,19 @@
 package org.example.langchain4j;
 
+import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
+import jakarta.annotation.PostConstruct;
 import org.example.langchain4j.service.Assistant;
 import org.example.langchain4j.service.MemoryChatAssistant;
 import org.example.langchain4j.service.SeparateChatAssistant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+
+import java.util.Arrays;
 
 @SpringBootTest
 class Langchain4jApplicationTests {
@@ -39,12 +44,15 @@ class Langchain4jApplicationTests {
     @Autowired
     private OpenAiChatModel openAiChatModel;
 
+    @Autowired
+    private ApplicationContext applicationContext;
+
     @Test
     public void testSpringBoot() {
-        //向模型提问
-        String answer = openAiChatModel.chat("你好");
-        //输出结果
-        System.out.println(answer);
+
+            String[] beanNames = applicationContext.getBeanNamesForType(ChatMemoryProvider.class);
+            System.out.println("ChatMemoryProviders: " + Arrays.toString(beanNames));
+
     }
 
 //    @Autowired
@@ -57,15 +65,15 @@ class Langchain4jApplicationTests {
 //        //输出结果
 //        System.out.println(answer);
 //    }
-
-    @Autowired
-    private Assistant assistant;
-
-    @Test
-    public void testAssistant() {
-        String answer = assistant.chat("Hello");
-        System.out.println(answer);
-    }
+//
+//    @Autowired
+//    private Assistant assistant;
+//
+//    @Test
+//    public void testAssistant() {
+//        String answer = assistant.chat("Hello");
+//        System.out.println(answer);
+//    }
 
     @Test
     public void testChatMemory3() {
@@ -100,16 +108,16 @@ class Langchain4jApplicationTests {
     @Autowired
     private SeparateChatAssistant separateChatAssistant;
 
-    @Test
-    public void testChatMemory5() {
-
-        String answer1 = separateChatAssistant.chat(1, "我是环环");
-        System.out.println(answer1);
-        String answer2 = separateChatAssistant.chat(1, "我是谁");
-        System.out.println(answer2);
-        String answer3 = separateChatAssistant.chat(2, "我是谁");
-        System.out.println(answer3);
-
-    }
+//    @Test
+//    public void testChatMemory5() {
+//
+//        String answer1 = separateChatAssistant.chat(1, "我是环环");
+//        System.out.println(answer1);
+//        String answer2 = separateChatAssistant.chat(1, "我是谁");
+//        System.out.println(answer2);
+//        String answer3 = separateChatAssistant.chat(2, "我是谁");
+//        System.out.println(answer3);
+//
+//    }
 
 }

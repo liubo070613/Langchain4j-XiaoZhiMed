@@ -380,13 +380,15 @@ public void testChatMemory4() {
 @AiService(
         wiringMode = AiServiceWiringMode.EXPLICIT,
         chatModel = "openAiChatModel",//找到对应的bean进行绑定
-        chatMemory = "chatMemory",//找到对应的bean进行绑定
+        //chatMemory = "chatMemory",//找到对应的bean进行绑定
         chatMemoryProvider = "chatMemoryProvider"//找到对应的bean进行绑定
 )
 public interface SeparateChatAssistant {
     String chat(@MemoryId int memoryId, @UserMessage String userMessage);
 }
 ```
+
+**不能同时使用 `chatMemory` (单一会话内存）和 `chatMemoryProvider`（多会话内存）**
 
 为每个用户或会话提供独立的 `ChatMemory` 实例，根据提供的 `memoryId`（通常是用户 ID 或会话 ID）返回对应的 `ChatMemory` 实例。
 
@@ -739,3 +741,279 @@ public class SeparateChatAssistantConfig {
 ```
 
 ![image-20250423163857411](./assets/image-20250423163857411.png)
+
+# 6.提示词 Prompt
+
+## 系统提示词
+
+`@SystemMessage` 设定角色，塑造AI助手的专业身份，明确助手的能力范围
+
+配置`@SystemMessage`
+
+在`SeparateChatAssistant`类的`chat`方法上添加`@SystemMessage`注解
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemory = "chatMemory",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProvider"//找到对应的bean进行绑定
+)
+public interface SeparateChatAssistant {
+    @SystemMessage("你是一个智能助手，请用湖南话回答问题。")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage);
+}
+```
+
+`@SystemMessage` 的内容将在后台转换为 `SystemMessage` 对象，并与 `UserMessage` 一起发送给大语
+
+言模型（`LLM`）
+
+## 测试
+
+```java
+@SpringBootTest
+public class PromptTest {
+    @Autowired
+    private SeparateChatAssistant separateChatAssistant;
+
+    @Test
+    public void testSystemMessage() {
+
+        String answer = separateChatAssistant.chat(3, "今天几号");
+
+        System.out.println(answer);
+
+    }
+
+}
+```
+
+请求体的内容如下：
+
+```
+[{
+  "model" : "qwen-plus",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "你是一个智能助手，请用湖南话回答问题。"
+  }, {
+    "role" : "user",
+    "content" : "今天几号"
+  } ],
+  "stream" : false
+}]
+```
+
+## 从资源文件中加载提示模板
+
+`@SystemMessage` 注解还可以从资源文件中加载提示模板
+
+创建`resources/prompts/assistant.txt`
+
+```ini
+你是一个智能助手，请用湖南话回答问题。
+Current time: {{time}}
+```
+
+`{{time}}` 你要传入的变量。
+
+修改`SeparateChatAssistant`类
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemory = "chatMemory",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProvider"//找到对应的bean进行绑定
+)
+public interface SeparateChatAssistant {
+//    @SystemMessage("你是一个智能助手，请用湖南话回答问题。")
+    @SystemMessage(fromResource = "prompts/assistant.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("time")String time);
+}
+```
+
+`@SystemMessage(fromResource = "...")` 表示从资源文件中加载提示。
+
+`@V("time")` 自动填入提示模板中的对应占位符。
+
+请求体为：
+
+```
+[{
+  "model" : "qwen-plus",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "你是一个智能助手，请用湖南话回答问题。\nCurrent time: 2025-04-24T09:46:14.332756\n"
+  }, {
+    "role" : "user",
+    "content" : "今天几号"
+  } ],
+  "stream" : false
+}]
+```
+
+## 用户提示词
+
+`@UserMessage`：获取用户输入
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemory = "chatMemory"//找到对应的bean进行绑定
+)
+public interface MemoryChatAssistant {
+    @UserMessage(fromResource = "prompts/assistant.txt")
+    String chat(String time);
+}
+```
+
+当只有一个参数时，不需要使用`@V`注解，但是需要同名，可以自动绑定
+
+测试
+
+```java
+@Autowired
+private MemoryChatAssistant memoryChatAssistant;
+
+@Test
+public void testUserMessage() {
+
+    String answer = memoryChatAssistant.chat(LocalDateTime.now().toString());
+    System.out.println(answer);
+}
+```
+
+请求体：
+
+```
+[{
+  "model" : "qwen-plus",
+  "messages" : [ {
+    "role" : "user",
+    "content" : "你是一个智能助手，请用湖南话回答问题。\nCurrent time: 2025-04-24T10:01:40.622852\n"
+  } ],
+  "stream" : false
+}]
+```
+
+# 7.项目实战-创建硅谷小智
+
+这部分实现硅谷小智的基本聊天功能，包含聊天记忆、聊天记忆持久化、提示词
+
+## 创建硅谷小智
+
+创建`xiaozhi-prompt-template.txt`
+
+```
+你的名字是“硅谷小智”，你是一家名为“北京协和医院”的智能客服。 你是一个训练有素的医疗顾问和医疗伴诊助手。 你态度友好、礼貌且言辞简洁。
+1、请仅在用户发起第一次会话时，和用户打个招呼，并介绍你是谁。
+2、作为一个训练有素的医疗顾问： 请基于当前临床实践和研究，针对患者提出的特定健康问题，提供详细、准确且实用的医疗建议。请同时考虑可能的病 因、诊断流程、治疗方案以及预防措施，并给出在不同情境下的应对策略。对于药物治疗，请特别指明适用的药品名 称、剂量和疗程。如果需要进一步的检查或就医，也请明确指示。
+3、作为医疗伴诊助手，你可以回答用户就医流程中的相关问题，主要包含以下功能： AI分导诊：根据患者的病情和就医需求，智能推荐最合适的科室。 AI挂号助手：实现智能查询是否有挂号号源服务；实现智能预约挂号服务；实现智能取消挂号服务。
+4、你必须遵守的规则如下： 在获取挂号预约详情或取消挂号预约之前，你必须确保自己知晓用户的姓名（必选）、身份证号（必选）、预约科室 （必选）、预约日期（必选，格式举例：2025-04-14）、预约时间（必选，格式：上午 或 下午）、预约医生（可 选）。 当被问到其他领域的咨询时，要表示歉意并说明你无法在这方面提供帮助。
+5、请在回答的结果中适当包含一些轻松可爱的图标和表情。
+6、现在是 {{current_time}}。
+```
+
+**配置持久化和记忆隔离,**创建一个`chatMemoryProviderXiaozhi`,使用`mongoChatMemoryStore`进行消息持久化
+
+```java
+@Configuration
+public class XiaozhiAgentConfig {
+
+    @Autowired
+    private MongoChatMemoryStore mongoChatMemoryStore;
+
+    public ChatMemoryProvider chatMemoryProviderXiaozhi() {
+        return memoryId -> MessageWindowChatMemory.builder()
+                .id(memoryId)
+                .maxMessages(20)
+                .chatMemoryStore(mongoChatMemoryStore)
+                .build();
+    }
+}
+```
+
+创建`XiaozhiAgent`
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProviderXiaozhi"//找到对应的bean进行绑定
+)
+public interface XiaozhiAgent {
+
+    @SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("current_time") String currentTime);
+}
+```
+
+创建聊天数据传输对象`ChatFormDTO`
+
+```java
+@Data
+public class ChatFormDTO {
+    //会话id
+    private int memoryId;
+    //用户消息
+    private String userMessage;
+    //当前日期
+    private String time;
+}
+```
+
+最后创建`XiaozhiController`
+
+```java
+@Tag(name = "小智")
+@RestController
+@RequestMapping("/xiaozhi")
+public class XiaozhiController {
+
+    @Autowired
+    private XiaozhiAgent xiaozhiAgent;
+
+    @Operation(summary = "对话")
+    @PostMapping("/chat")
+    public String chat(@RequestBody ChatFormDTO chatFormDTO) {
+        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage(), chatFormDTO.getTime());
+    }
+}
+```
+
+## 启动时遇到的问题
+
+我创建了两个`ChatMemoryProvider`类型的`Bean`：`chatMemoryProvider`和`chatMemoryProviderXiaozhi`
+
+所以在@`AiService`中需要指定`chatMemoryProvider`用哪个`ChatMemoryProvider`
+
+```
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProviderXiaozhi"//找到对应的bean进行绑定
+)
+```
+
+但是我有一个`Assistant`什么都没指定
+
+```
+@AiService()
+public interface Assistant {
+    String chat(String message);
+}
+```
+
+当你使用 `@AiService()` 而不指定任何参数时，框架会尝试自动注入所需的组件，如 `ChatModel`、`ChatMemory` 或 `ChatMemoryProvider`。
+
+所以当上下文中存在多个相同类型的 Bean（例如多个 `ChatMemoryProvider`），框架将无法确定使用哪个 Bean，从而抛出 `IllegalConfigurationException` 异常。
+
+这个时候把`Assistant`删掉就行，这个只是之前测试用的
+
+# 8.`Function Calling` 函数调用
+
+
+

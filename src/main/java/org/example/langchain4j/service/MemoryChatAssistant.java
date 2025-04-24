@@ -1,5 +1,6 @@
 package org.example.langchain4j.service;
 
+import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
 import dev.langchain4j.service.spring.AiServiceWiringMode;
 
@@ -9,5 +10,6 @@ import dev.langchain4j.service.spring.AiServiceWiringMode;
         chatMemory = "chatMemory"//找到对应的bean进行绑定
 )
 public interface MemoryChatAssistant {
-    String chat(String message);
+    @UserMessage(fromResource = "prompts/assistant.txt")
+    String chat(String time);
 }

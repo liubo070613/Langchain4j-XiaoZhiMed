@@ -10,11 +10,10 @@ import dev.langchain4j.service.spring.AiServiceWiringMode;
 @AiService(
         wiringMode = AiServiceWiringMode.EXPLICIT,
         chatModel = "openAiChatModel",//找到对应的bean进行绑定
-//        chatMemory = "chatMemory",//找到对应的bean进行绑定
-        chatMemoryProvider = "chatMemoryProvider"//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProviderXiaozhi"//找到对应的bean进行绑定
 )
-public interface SeparateChatAssistant {
-//    @SystemMessage("你是一个智能助手，请用湖南话回答问题。")
-    @SystemMessage(fromResource = "prompts/assistant.txt")
-    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("time")String time);
+public interface XiaozhiAgent {
+
+    @SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage, @V("current_time") String currentTime);
 }
