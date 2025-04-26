@@ -207,7 +207,7 @@ langchain4j.open-ai.chat-model.model-name=deepseek-chat
         <groupId>dev.langchain4j</groupId>
         <artifactId>langchain4j-community-bom</artifactId>
         <version>${langchain4j.version}<</version>
-        <typ>pom</typ>
+        <type>pom</type>
         <scope>import</scope>
     </dependency>
 </dependencyManagement>
@@ -248,6 +248,25 @@ langchain4j.community.dashscope.chat-model.api-key=${DASH_SCOPE_API_KEY} langcha
 ```
 
 ## 创建接口
+
+`@AiService`定义如下
+
+```java
+@Service
+@Target({ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface AiService {
+    AiServiceWiringMode wiringMode() default AiServiceWiringMode.AUTOMATIC;
+    String chatModel() default "";//绑定聊天模型
+    String streamingChatModel() default "";
+    String chatMemory() default "";//绑定聊天记忆
+    String chatMemoryProvider() default "";//绑定聊天记忆隔离和持久化
+    String contentRetriever() default "";//绑定内容检索器
+    String retrievalAugmentor() default "";
+    String moderationModel() default "";
+    String[] tools() default {};//绑定工具
+}
+```
 
 使用`@AiService`注解，它可能用于标记一个接口，使其被框架（如 `langchain4j`）自动处理，生成 AI 服务的实现。  
 
@@ -1363,4 +1382,316 @@ public class AppointmentTools {
 ![image-20250424164001253](./assets/image-20250424164001253.png)
 
 # 10.检索增强生成 RAG
+
+## RAG的过程
+
+![image-20250425165837431](./assets/image-20250425165837431.png)
+
+## 处理文档
+
+### 文档加载器`Document Loader`
+
+LangChain4j 提供了多种文档加载器，适用于不同的文档来源：
+
+- **`FileSystemDocumentLoader`**：从本地文件系统加载文档。
+- **`UrlDocumentLoader`**：通过 `URL` 加载文档。
+- **`AmazonS3DocumentLoader`**：从 `Amazon S3` 存储桶加载文档。
+- **`AzureBlobStorageDocumentLoader`**：从 `Azure Blob` 存储加载文档。
+- **`GoogleCloudStorageDocumentLoader`**：从 `Google Cloud Storage` 加载文档。
+- **`GitHubDocumentLoader`**：从 `GitHub` 仓库加载文档。
+- **`TencentCOSDocumentLoader`**：从腾讯云对象存储加载文档。
+
+**测试**
+
+```java
+xxxxxxxxxx1 1    @Test
+    public void testReadDocument() {
+        //使用FileSystemDocumentLoader读取指定目录下的知识库文档
+        // 并使用默认的文档解析器TextDocumentParser对文档进行解析
+        Document document = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/测试.txt");
+        System.out.println(document.text());
+    }
+```
+
+### 文档解析器`Document Parser`
+
+LangChain4j 提供了多种内置的文档解析器，适用于不同的文件格式：
+
+ 1. `TextDocumentParser`
+
+- **用途**：解析纯文本文件，如 `.txt`、`.md`、`.html` 等。
+- **特点**：轻量级，适用于结构简单的文本内容。
+
+2. `ApachePdfBoxDocumentParser`
+
+- **用途**：解析 PDF 文件。
+- **特点**：能够提取 PDF 中的文本和元数据。
+3. `ApachePoiDocumentParser`
+
+- **用途**：解析 Microsoft Office 文件，如 `.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx` 等。
+- **特点**：支持提取 Office 文档中的文本内容。
+
+4. `ApacheTikaDocumentParser`
+
+- **用途**：通用解析器，支持多种文件格式。
+- **特点**：能够自动检测文件类型并解析，适用于处理多种格式的文档。
+
+假设如果我们想解析`PDF`文档，那么原有的 `TextDocumentParser` 就无法工作了，我们需要引入
+
+`langchain4j-document-parser-apache-pdfbox`
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-document-parser-apache-pdfbox</artifactId>
+</dependency>
+```
+
+**测试**
+
+```java
+    @Test
+    public void testParsePDF() {
+        Document document = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/医院信息.pdf", new ApachePdfBoxDocumentParser());
+        System.out.println(document);
+    }
+```
+
+### 文档分割器 `Document Splitter`
+
+1. `DocumentByParagraphSplitter`
+
+- **功能**：**将文档按段落进行分割**，段落通常由两个或更多连续的换行符定义。
+- **特点**：适用于结构清晰、段落分明的文档，如新闻文章、博客等。
+ 2. `DocumentBySentenceSplitter`
+
+- **功能**：**基于句子进行分割**，通常依赖于句子检测器（如 OpenNLP）来识别句子边界。
+- **特点**：适用于需要精细语义控制的场景，如问答系统、摘要生成等。
+- **注意**：需要引入相应的句子检测库作为依赖。
+
+ 3. `RecursiveCharacterTextSplitter`
+
+- **功能**：**递归地按字符进行分割**，优先在自然的分隔符（如段落、句子、空格）处进行分割，以保持语义完整性。
+- **特点**：是推荐的默认分割器，适用于大多数通用文本。 
+
+ 4. `CharacterTextSplitter`
+
+- **功能**：**按固定的字符数进行分割，**适用于结构简单、语义不太复杂的文本。
+- **特点**：实现简单，但可能会打断语义完整性。
+
+ 5. `TokenTextSplitter`
+
+- **功能**：**基于标记（Token）进行分割**，适用于需要控制模型输入长度的场景。
+- **特点**：有助于防止超过语言模型的上下文窗口限制。
+
+ 6. `MarkdownHeaderTextSplitter`
+
+- **功能**：**基于 Markdown 文档的标题结构进行分割**，保留标题元数据。
+- **特点**：适用于结构化的 Markdown 文档，便于上下文感知的处理。 
+
+### `embedding`生成和向量存储
+
+这里先使用`langchain4j`自带的`RAG`的简单实现，**后面我们探讨`embedding`模型的选型以及向量数据库的选型**
+
+**添加依赖**
+
+```
+<!--简单的rag实现-->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-easy-rag</artifactId>
+    <version>1.0.0-beta3</version>
+</dependency>
+```
+
+`langchain4j-easy-rag` 是 LangChain4j 提供的一个模块，该模块**封装了文档解析、分割、嵌入生成和向量存储**等复杂流程，使开发者能够更快速地搭建 RAG 系统。
+
+**测试**
+
+```java
+    @Test
+    public void testReadDocumentAndStore() {
+        // 加载文档
+        Document document = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/人工智能.md");
+        // 创建内存向量存储
+        InMemoryEmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
+        // 文档分割与嵌入生成
+        EmbeddingStoreIngestor.ingest(document, embeddingStore);
+        // 查看向量存储内容
+        System.out.println(embeddingStore);
+    }
+```
+
+`InMemoryEmbeddingStore<TextSegment>` 是 LangChain4j 提供的一个轻量级、基于内存的向量存储实现
+
+`EmbeddingStoreIngestor.ingest(document, embeddingStore);` 方法执行了以下操作：
+
+1. **文档分割**：默认使用递归分割器（`RecursiveCharacterTextSplitter`），将文档分割为多个文本片段（`TextSegment`）。每个片段的最大长度为 **300 个 token**，且相邻片段之间有 **30 个 token 的重叠**，以保持语义连贯性。
+2. **嵌入生成**：使用内置的轻量级嵌入模型（如 `BgeSmallEnV15QuantizedEmbeddingModel`：一个量化的英文嵌入模型，具有较小的向量维度，适合快速处理。）将每个文本片段转换为向量表示。
+3. **向量存储**：将生成的向量和对应的文本片段存储到内存中的向量存储（`InMemoryEmbeddingStore`）中。
+
+# 11.项目实战-在硅谷小智中实现RAG
+
+## 创建`ContentRetriever`
+
+在`xiaozhiAgentConfig`中添加`ContentRetriever`
+
+`ContentRetriever` 的核心功能
+
+- **输入**：用户的查询（`Query`）。
+- **输出**：与查询相关的内容列表（`List<Content>`），目前主要是文本片段（`TextSegment`）。
+- **数据源**：可以是嵌入存储（如 `InMemoryEmbeddingStore`）、全文搜索引擎、Web 搜索引擎、知识图谱、SQL 数据库等。
+
+```java
+@Bean
+public ContentRetriever contentRetrieverXiaozhi() {
+
+    Document document1 = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/医院信息.md");
+    Document document2 = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/科室信息.md");
+    Document document3 = FileSystemDocumentLoader.loadDocument("src/main/resources/knowledge/神经内科.md");
+    List<Document> documents = Arrays.asList(document1, document2, document3);
+
+    //使用内存向量存储
+    InMemoryEmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
+    //使用默认的文档分割器
+    EmbeddingStoreIngestor.ingest(documents, embeddingStore);
+    //从嵌入存储（EmbeddingStore）里检索和查询内容相关的信息
+    return EmbeddingStoreContentRetriever.from(embeddingStore);
+}
+```
+
+`EmbeddingStoreContentRetriever`是`ContentRetriever`实现类
+
+**输入**：用户的查询（`Query`）。
+
+**处理**：使用指定的嵌入模型（默认是`BgeSmallEnV15QuantizedEmbeddingModel`）将查询转换为向量。
+
+**输出**：返回与查询最相关的内容列表（`List<Content>`），通常是文本片段（`TextSegment`）。
+
+## 添加检索配置
+
+在 `XiaozhiAgent` 中添加 `contentRetriever` 配置
+
+```java
+
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProviderXiaozhi",//找到对应的bean进行绑定
+        tools = "appointmentTools",//找到对应的bean进行绑定
+        contentRetriever = "contentRetrieverXiaozhi"
+)
+public interface XiaozhiAgent {
+
+    @SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage);
+}
+```
+
+## 修改工具的`value`提示
+
+```java
+    @Tool(name = "预约挂号", value = "根据参数，先执行工具方法queryDepartment查询是否可预约，" +"并直接给用户回答是否可预约，并让用户确认所有预约信息，用户确认后再进行预约。" +
+            "如果用户没有提供具体的医生姓名，请从向量存储中找到一位医生。")
+    public String bookAppointment(Appointment appointment) {
+        //查找数据库中是否包含对应的预约记录
+        Appointment appointmentDB = appointmentService.getOne(appointment);
+        if (appointmentDB == null) {
+            appointment.setId(null);//防止大模型幻觉设置了id
+            if (appointmentService.save(appointment)) {
+                return "预约成功，并返回预约详情";
+            } else {
+                return "预约失败";
+            }
+        }
+        return "您在相同的科室和时间已有预约";
+    }
+```
+
+## 测试
+
+在`controller`中测试
+
+```
+请求：
+{
+  "memoryId": 12,
+  "userMessage": "我想要挂今天下午骨科的号，我的姓名是刘波，身份证号是111111111111111111"
+}
+响应：
+太棒了！刘波先生，您的预约已经成功啦 😊。以下是您的预约详情：
+
+- **就诊科室**：骨科
+- **预约日期**：2025-04-26（今天）
+- **预约时间**：下午
+- **医生姓名**：彭斌教授
+
+请您记得在就诊当天携带身份证和医保卡（如有），并提前到北京协和医院东单院区新门诊楼各楼层挂号/收费窗口取号哦。如果需要取消预约，请尽早通知我，以便释放号源给其他有需要的患者。
+
+祝您身体健康！有任何问题随时联系我哦 💕。
+```
+
+![image-20250426150212541](./assets/image-20250426150212541.png)
+
+# 12.向量模型和向量存储
+
+## 向量模型
+
+`Langchain4j`支持的向量模型：https://docs.langchain4j.dev/category/embedding-models
+
+这里选用阿里云百炼`text-embedding-v3`
+
+添加依赖，之前添加过就不用添加了
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-community-dashscope-spring-boot-starter</artifactId>
+</dependency>
+
+
+<dependencyManagement>
+    <dependency>
+        <groupId>dev.langchain4j</groupId>
+        <artifactId>langchain4j-community-bom</artifactId>
+        <version>${langchain4j.version}<</version>
+        <type>pom</type>
+        <scope>import</scope>
+    </dependency>
+</dependencyManagement>
+```
+
+配置文件`application.properties`添加
+
+```ini
+# 配置阿里通义千问向量模型
+langchain4j.community.dashscope.embedding-model.api-key=你的key
+langchain4j.community.dashscope.embedding-model.model-name=text-embedding-v3
+```
+
+测试
+
+```java
+@SpringBootTest
+public class EmbeddingTest {
+
+    @Autowired
+    private EmbeddingModel embeddingModel;//注入千问embeddingModel
+
+    @Test
+    public void testEmbeddingModel() {
+
+        Response<Embedding> embed = embeddingModel.embed("你好");
+
+        System.out.println("向量维度：" + embed.content().vector().length);
+        System.out.println("向量输出：" + embed.toString());
+
+    }
+
+}
+```
+
+## 向量存储
+
+`Langchain4j`支持的向量数据库：https://docs.langchain4j.dev/category/embedding-stores
 

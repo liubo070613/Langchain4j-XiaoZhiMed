@@ -10,7 +10,8 @@ import dev.langchain4j.service.spring.AiServiceWiringMode;
         wiringMode = AiServiceWiringMode.EXPLICIT,
         chatModel = "openAiChatModel",//找到对应的bean进行绑定
         chatMemoryProvider = "chatMemoryProviderXiaozhi",//找到对应的bean进行绑定
-        tools = "appointmentTools"//找到对应的bean进行绑定
+        tools = "appointmentTools",//找到对应的bean进行绑定
+        contentRetriever = "contentRetrieverXiaozhi"
 )
 public interface XiaozhiAgent {
 
