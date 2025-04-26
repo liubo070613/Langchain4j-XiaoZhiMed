@@ -110,9 +110,16 @@
             <artifactId>langchain4j-easy-rag</artifactId>
         </dependency>
 
+        <!--阿里通义千问-->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-community-dashscope-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!--向量数据库pinecone-->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-pinecone</artifactId>
         </dependency>
 
 

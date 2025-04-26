@@ -1,6 +1,7 @@
 package org.example.langchain4j;
 
 import org.example.langchain4j.service.SeparateChatAssistant;
+import org.example.langchain4j.service.XiaozhiAgent;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,14 +14,15 @@ public class ToolsTest {
     @Autowired
     private SeparateChatAssistant separateChatAssistant;
 
-//    @Test
-//    public void testCalculatorTools() {
-//
-//        String answer = separateChatAssistant.chat(4, "1+2等于几，475695037565的平方根是多少？",
-//                LocalDateTime.now().toString());
-//
-//        //答案：3，689706.4865
-//        System.out.println(answer);
-//
-//    }
+    @Autowired
+    private XiaozhiAgent xiaozhiAgent;
+
+    @Test
+    public void testCalculatorTools() {
+
+        String answer = xiaozhiAgent.chat(15,"你们医院有哪些医生？");
+
+        System.out.println(answer);
+
+    }
 }

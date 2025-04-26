@@ -918,7 +918,7 @@ public void testUserMessage() {
 }]
 ```
 
-# 7.项目实战-创建硅谷小智
+# 7.项目实战-创建小智
 
 这部分实现硅谷小智的基本聊天功能，包含聊天记忆、聊天记忆持久化、提示词
 
@@ -1129,7 +1129,7 @@ public void testCalculatorTools() {
 
 可以在控制台看一下调用的流程
 
-# 9.项目实战-优化硅谷小智
+# 9.项目实战-优化小智
 
 ## 预约业务的实现
 
@@ -1530,7 +1530,7 @@ LangChain4j 提供了多种内置的文档解析器，适用于不同的文件�
 2. **嵌入生成**：使用内置的轻量级嵌入模型（如 `BgeSmallEnV15QuantizedEmbeddingModel`：一个量化的英文嵌入模型，具有较小的向量维度，适合快速处理。）将每个文本片段转换为向量表示。
 3. **向量存储**：将生成的向量和对应的文本片段存储到内存中的向量存储（`InMemoryEmbeddingStore`）中。
 
-# 11.项目实战-在硅谷小智中实现RAG
+# 11.项目实战-在小智中实现RAG
 
 ## 创建`ContentRetriever`
 
@@ -1694,4 +1694,271 @@ public class EmbeddingTest {
 ## 向量存储
 
 `Langchain4j`支持的向量数据库：https://docs.langchain4j.dev/category/embedding-stores
+
+### 主流向量数据库的对比
+
+| 数据库       | 特点                                                         | 优劣势简述                |
+| ------------ | ------------------------------------------------------------ | ------------------------- |
+| **FAISS**    | Facebook 开源，支持 CPU/GPU，精度高，支持各种索引结构        | 仅支持内存，适合离线分析  |
+| **Milvus**   | 全功能开源向量 DB，支持 ANN、多种索引、元数据过滤、多租户    | 功能丰富，复杂度稍高      |
+| **Weaviate** | 内置嵌入模型，支持 GraphQL 查询，可与 OpenAI 接入            | 云原生友好，嵌入+存储一体 |
+| **Pinecone** | 云服务，主打生产级别向量检索 + 元数据过滤，适合 RAG          | 非开源，依赖其服务        |
+| **Qdrant**   | Rust 编写，支持 payload 过滤、高性能搜索，内存+磁盘混合存储  | 性能优，使用门槛低        |
+| **Vespa**    | 支持文本检索 + 向量检索 + ranking pipeline                   | 架构重，适合大型搜索      |
+| **Chroma**   | 面向 LLM 应用，极简部署，开箱即用，集成 LangChain/LlamaIndex | 功能轻量级，适合开发初期  |
+
+ **研发 / 原型阶段**
+
+- 推荐：**FAISS（本地），Chroma**
+- 优点：轻量、易用、社区丰富
+
+ **构建 Web 应用 / 小中型系统**
+
+- 推荐：**Qdrant，Weaviate，Milvus-lite**
+- 优点：支持 `REST/gRPC/客户端SDK`，带元数据过滤，可集成 `LangChain`
+
+ **大规模生产部署 / 高并发**
+
+- 推荐：**Milvus（完整集群），Pinecone（托管），Vespa（超大规模）**
+- 优点：高可扩展性，多副本，支持异构资源
+
+### 集成`Pinecone`
+
+获取`APIKEY`
+
+[官网](https://app.pinecone.io/organizations/-OOlruIX0RDNVV7Bar2G/keys)
+
+**添加依赖**
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-pinecone</artifactId>
+</dependency>
+```
+
+**配置向量存储对象**
+
+在 LangChain4j 中，`EmbeddingStore` 接口提供了**统一的 API**，使得开发者可以方便地切换不同的向量数据库实现。
+
+`EmbeddingStore` 的主要功能包括：
+
+- **存储嵌入向量**：将文本或其他数据转换为嵌入向量后，存储到向量数据库中。
+- **相似度搜索**：根据输入的查询向量，检索与之相似的嵌入向量，实现语义搜索。
+- **关联原始数据**：可以将嵌入向量与原始的 `TextSegment` 数据一起存储，便于在检索时获取完整的上下文信息。
+
+```java
+@Configuration
+public class EmbeddingStoreConfig {
+
+    @Autowired
+    private EmbeddingModel embeddingModel;
+
+    @Bean
+    public EmbeddingStore<TextSegment> embeddingStore() {
+
+        return PineconeEmbeddingStore.builder()
+                .apiKey("pcsk_64ZGQr_52GGBHxfVxFadDcXCf9igB7E1qN3MAeyQwXrCdJzjwTntNxrhoYzavGR7ab31ps")
+                .index("xiaozhi-index")//如果指定的索引不存在，将创建一个新的索引
+                .nameSpace("xiaozhi-namespace")//如果指定的名称空间不存在，将创建一个新的名称空间
+                .createIndex(PineconeServerlessIndexConfig.builder()
+                        .cloud("AWS")
+                        .region("us-west-1")
+                        .dimension(embeddingModel.dimension())
+                        .build())
+                .build();
+    }
+
+}
+```
+
+**测试存储**
+
+```java
+@Test
+public void testPineconeEmbeddingStore() {
+
+    TextSegment segment1 = TextSegment.from("我喜欢羽毛球");
+    Embedding embedding1 = embeddingModel.embed(segment1).content();
+    embeddingStore.add(embedding1, segment1);
+
+    TextSegment segment2 = TextSegment.from("今天天气很好");
+    Embedding embedding2 = embeddingModel.embed(segment2).content();
+    embeddingStore.add(embedding2, segment2);
+}
+```
+
+![image-20250426200828653](./assets/image-20250426200828653.png)
+
+**测试检索**
+
+接收请求获取问题，将问题转换为向量，在 `Pinecone` 向量数据库中进行相似度搜索，找到最相似的文本 片段，并将其文本内容返回给客户端
+
+```java
+ @Test
+public void testEmbeddingSearch(){
+    Embedding queryEmbedding = embeddingModel.embed("你最喜欢的运动是什么？").content();
+
+    EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+            .queryEmbedding(queryEmbedding)
+            .maxResults(1)
+            .build();
+
+    EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
+    EmbeddingMatch<TextSegment> embeddingMatch = searchResult.matches().get(0);
+
+    System.out.println("匹配的分数：" + embeddingMatch.score());
+    System.out.println("匹配的内容：" + embeddingMatch.embedded().text());
+}
+```
+
+`EmbeddingSearchRequest` 的核心作用是构建一个搜索请求，包含以下关键参数：
+
+- **queryEmbedding**：待搜索的查询向量，通常由嵌入模型（如 `EmbeddingModel`）生成。
+- **filter**（可选）：用于根据元数据（如作者、标签等）对搜索结果进行过滤。
+- **maxResults**：指定返回的最大结果数量。
+- **minScore**（可选）：设置结果的最小相似度得分阈值，低于该值的结果将被排除。
+
+# 13.项目实战-在小智中整合向量数据库
+
+## 上传知识库到`Pinecone`
+
+创建`UploadKnowledgeLibraryService`和 `UploadKnowledgeLibraryServiceImpl`
+
+```java
+public interface UploadKnowledgeLibraryService {
+    public void uploadKnowledgeLibrary(MultipartFile[] files);
+}
+
+@Service
+public class UploadKnowledgeLibraryServiceImpl implements UploadKnowledgeLibraryService {
+
+    @Autowired
+    private EmbeddingStore<TextSegment> embeddingStore;
+
+    @Autowired
+    private EmbeddingModel embeddingModel;
+
+    @Override
+    public void uploadKnowledgeLibrary(MultipartFile[] files) {
+        List<Document> documents = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            if (!file.isEmpty()) {
+                try {
+                    // 保存为临时文件
+                    File tempFile = File.createTempFile("upload-", "-" + file.getOriginalFilename());
+                    file.transferTo(tempFile);
+
+                    // 根据文件类型选择适当的解析器
+                    String fileName = file.getOriginalFilename();
+                    Document document;
+
+                    if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
+                        // 针对PDF文件使用专用解析器
+                        document = FileSystemDocumentLoader.loadDocument(tempFile.getAbsolutePath(),
+                                new ApachePdfBoxDocumentParser());
+                    } else {
+                        // 其他文件使用默认解析器
+                        document = FileSystemDocumentLoader.loadDocument(tempFile.getAbsolutePath());
+                    }
+
+                    documents.add(document);
+
+                    // 删除临时文件
+                    tempFile.delete();
+                } catch (IOException e) {
+                    throw new RuntimeException("处理文件失败: " + file.getOriginalFilename(), e);
+                }
+            }
+        }
+
+        // 将文档存入向量数据库
+        EmbeddingStoreIngestor
+                .builder()
+                .embeddingStore(embeddingStore)
+                .embeddingModel(embeddingModel)
+                .build()
+                .ingest(documents);
+    }
+
+}
+```
+
+创建上传的`UploadKnowledgeLibraryController`
+
+```java
+@Tag(name = "上传知识库")
+@RestController
+@RequestMapping("/documents")
+public class UploadKnowledgeLibraryController {
+
+    @Autowired
+    private UploadKnowledgeLibraryService uploadKnowledgeLibraryService;
+
+    @PostMapping("/upload")
+    public String uploadKnowledgeLibrary(MultipartFile[] files) {
+        uploadKnowledgeLibraryService.uploadKnowledgeLibrary(files);
+        return "上传成功";
+    }
+}
+```
+
+上传
+
+![image-20250426212227991](./assets/image-20250426212227991.png)
+
+## 修改`XiaozhiAgentConfig`
+
+添加基于`Pinecone`向量存储的检索器
+
+```java
+@Autowired
+private EmbeddingModel embeddingModel;
+
+@Autowired
+private EmbeddingStore<TextSegment> embeddingStore;
+
+//基于Pinecone向量存储的检索器
+@Bean
+public ContentRetriever contentRetrieverPinecone(){
+
+    return EmbeddingStoreContentRetriever
+            .builder()
+            .embeddingModel(embeddingModel)
+            .embeddingStore(embeddingStore)
+            .maxResults(1)
+            .minScore(0.8)
+            .build();
+}
+```
+
+## 修改`XiaozhiAgent`
+
+修改`contentRetriever`的配置为`contentRetrieverXiaozhiPincone`
+
+```java
+@AiService(
+        wiringMode = AiServiceWiringMode.EXPLICIT,
+        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+        chatMemoryProvider = "chatMemoryProviderXiaozhi",//找到对应的bean进行绑定
+        tools = "appointmentTools",//找到对应的bean进行绑定
+        contentRetriever = "contentRetrieverPinecone"//找到对应的bean进行绑定
+)
+public interface XiaozhiAgent {
+
+    @SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
+    String chat(@MemoryId int memoryId, @UserMessage String userMessage);
+}
+```
+
+
+
+
+
+
+
+
+
+
 
