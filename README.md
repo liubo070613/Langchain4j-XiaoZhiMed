@@ -1952,13 +1952,90 @@ public interface XiaozhiAgent {
 }
 ```
 
+# 14.项目实战-改造流式输出
 
+大模型的流式输出是指大模型在生成文本或其他类型的数据时，不是等到整个生成过程完成后再一次性 返回所有内容，而是生成一部分就立即发送一部分给用户或下游系统，以逐步、逐块的方式返回结果。 这样，用户就不需要等待整个文本生成完成再看到结果。通过这种方式可以改善用户体验，因为用户不 需要等待太长时间，几乎可以立即开始阅读响应。
 
+## 添加依赖
 
+```xml
+<!--流式输出-->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webflux</artifactId>
+</dependency>
 
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-reactor</artifactId>
+</dependency>
+```
 
+## 配置流式输出模型
 
+在`application.properties`中配置流式输出大模型
 
+```ini
+#集成阿里通义千问-流式输出
+langchain4j.community.dashscope.streaming-chat-model.api-key=你的apikey
+langchain4j.community.dashscope.streaming-chat-model.model-name=qwen-plus
+```
 
+## 修改`XiaozhiAgent`
 
+注释`chatModel`，启用`streamingChatModel`；把修改`chat`方法的返回值
 
+```java
+@AiService(
+wiringMode = AiServiceWiringMode.EXPLICIT,
+//        chatModel = "openAiChatModel",//找到对应的bean进行绑定
+streamingChatModel = "qwenStreamingChatModel",//找到对应的bean进行绑定
+chatMemoryProvider = "chatMemoryProviderXiaozhi",//找到对应的bean进行绑定
+tools = "appointmentTools",//找到对应的bean进行绑定
+contentRetriever = "contentRetrieverPinecone"//找到对应的bean进行绑定
+)
+public interface XiaozhiAgent {
+
+@SystemMessage(fromResource = "prompts/xiaozhi-prompt-template.txt")
+Flux<String> chat(@MemoryId int memoryId, @UserMessage String userMessage);
+}
+```
+
+## 修改`XiaozhiController`
+
+修改`chat`方法的返回值
+
+修改`@PostMapping`，添加`produces = "text/stream;charset=utf-8"`，使其流式输出且不会乱码
+
+```java
+@Tag(name = "小智")
+@RestController
+@RequestMapping("/xiaozhi")
+public class XiaozhiController {
+
+    @Autowired
+    private XiaozhiAgent xiaozhiAgent;
+
+    @Operation(summary = "对话")
+    @PostMapping(value = "/chat",produces = "text/stream;charset=utf-8")
+    public Flux<String> chat(@RequestBody ChatFormDTO chatFormDTO) {
+        return xiaozhiAgent.chat(chatFormDTO.getMemoryId(), chatFormDTO.getUserMessage());
+    }
+}
+```
+
+# 15.项目实战-运行前端工程
+
+安装`Node.js`
+
+```sh
+cd xiaozhi-ui 
+npm i 
+npm run dev
+```
+
+前端我修改了一下，使得输出的内容支持`markdown`语法
+
+后续我会将我自己的代码上传到GitHub中
+
+![image-20250427164032237](./assets/image-20250427164032237.png)

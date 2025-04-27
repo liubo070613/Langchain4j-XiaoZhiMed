@@ -8,6 +8,6 @@ public class ChatFormDTO {
     //会话id
     private int memoryId;
     //用户消息
-    private String userMessage;
+    private String message;
 
 }
