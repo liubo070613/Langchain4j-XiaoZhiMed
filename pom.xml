@@ -48,7 +48,7 @@
         <dependency>
             <groupId>com.github.xiaoymin</groupId>
             <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
-            <version>${knife4j.version}</version>
+            <version>4.4.0</version>
         </dependency>
 
         <dependency>
@@ -84,7 +84,7 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-            <version>${mybatis-plus.version}</version>
+            <version>3.5.11</version>
         </dependency>
 
         <!--代码生成器-->
@@ -143,7 +143,7 @@
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
+                <version>1.0.0-beta3</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
